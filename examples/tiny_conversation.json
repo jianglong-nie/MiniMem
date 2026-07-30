@@ -1,0 +1,19 @@
+{
+  "conversation_date": "2026-01-15T10:00:00",
+  "turns": [
+    {
+      "role": "Alice",
+      "content": "I moved to Paris on 10 January 2026 for a design job."
+    },
+    {
+      "role": "Bob",
+      "content": "That sounds exciting. I hope you enjoy the new job."
+    },
+    {
+      "role": "Alice",
+      "content": "Thanks. I plan to visit the Louvre this weekend."
+    }
+  ],
+  "question": "Where did Alice move?",
+  "answer": "Paris"
+}

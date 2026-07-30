@@ -1,0 +1,21 @@
+.DS_Store
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+
+# Download LoCoMo separately from its official repository.
+benchmarks/locomo/data/locomo10.json
+
+# Generated benchmark artifacts.
+outputs/
+predictions/
+memories/
+results/

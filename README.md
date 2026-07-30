@@ -1,0 +1,209 @@
+# MiniMem
+
+MiniMem is a deliberately small baseline for evaluating conversational memory
+on LoCoMo-style question answering.
+
+It implements one transparent pipeline:
+
+```text
+conversation
+    -> LLM fact extraction
+    -> embedding cosine similarity
+    -> direct top-k retrieval
+    -> LLM answer
+    -> token-level F1
+```
+
+MiniMem is intended for education, debugging, and lightweight evaluation. It
+does not include memory updating, clustering, keyword search, reranking,
+graph retrieval, or token-budget optimization.
+
+## Open-source memory research
+
+The following open-source papers and projects were reviewed while defining the
+scope of MiniMem.
+
+| Paper or project | Main focus | Paper | Code |
+| --- | --- | --- | --- |
+| Mem0 | Production-oriented long-term memory extraction and retrieval. | [PDF](https://arxiv.org/pdf/2504.19413) | [GitHub](https://github.com/mem0ai/mem0) |
+| Zep | Temporal knowledge-graph memory built on Graphiti. | [PDF](https://arxiv.org/pdf/2501.13956) | [GitHub](https://github.com/getzep/graphiti) |
+| MemGPT | Operating-system-inspired context and memory management. | [PDF](https://arxiv.org/pdf/2310.08560) | [GitHub](https://github.com/letta-ai/letta) |
+| MemOS | Unified management of parametric, activation, and plaintext memory. | [PDF](https://arxiv.org/pdf/2505.22101) | [GitHub](https://github.com/MemTensor/MemOS) |
+| MIRIX | Multi-agent coordination across six memory types. | [PDF](https://arxiv.org/pdf/2507.07957) | [GitHub](https://github.com/Mirix-AI/MIRIX) |
+| SimpleMem | Structured compression, semantic synthesis, and intent-aware retrieval. | [PDF](https://arxiv.org/pdf/2601.02553) | [GitHub](https://github.com/aiming-lab/SimpleMem) |
+| LangMem | Long-term memory SDK for LangChain and LangGraph agents. | — | [GitHub](https://github.com/langchain-ai/langmem) |
+| MemoryOS | Hierarchical short-, mid-, and long-term personal memory. | [PDF](https://arxiv.org/pdf/2506.06326) | [GitHub](https://github.com/BAI-LAB/MemoryOS) |
+| A-MEM | Zettelkasten-inspired agentic memory with linked notes. | [PDF](https://arxiv.org/pdf/2502.12110) | [GitHub](https://github.com/agiresearch/A-mem) |
+| LightMem | Lightweight multi-stage memory with low-cost updates. | [PDF](https://arxiv.org/pdf/2510.18866) | [GitHub](https://github.com/zjunlp/LightMem) |
+| MemoryBank | Long-term conversational memory with an Ebbinghaus forgetting model. | [PDF](https://arxiv.org/pdf/2305.10250) | [GitHub](https://github.com/zhongwanjun/MemoryBank-SiliconFriend) |
+| G-Memory | Hierarchical graph memory for multi-agent collaboration. | [PDF](https://arxiv.org/pdf/2506.07398) | [GitHub](https://github.com/bingreeky/GMemory) |
+| MemEvolve | Meta-evolution of modular memory architectures. | [PDF](https://arxiv.org/pdf/2512.18746) | [GitHub](https://github.com/bingreeky/MemEvolve) |
+| Nemori | Self-organizing memory inspired by event segmentation. | [PDF](https://arxiv.org/pdf/2508.03341) | [GitHub](https://github.com/nemori-ai/nemori) |
+| SuperLocalMemory | Local-first multi-agent memory with poisoning defense. | [PDF](https://arxiv.org/pdf/2603.02240) | [GitHub](https://github.com/qualixar/superlocalmemory) |
+| SuperLocalMemory V3 | Zero-LLM enterprise memory using information geometry. | [PDF](https://arxiv.org/pdf/2603.14588) | [GitHub](https://github.com/qualixar/superlocalmemory) |
+| LatentMem | Role-specific latent memory composition for multi-agent systems. | [PDF](https://arxiv.org/pdf/2602.03036) | [GitHub](https://github.com/KANABOON1/LatentMem) |
+| MemP | Construction, retrieval, and updating of procedural memory. | [PDF](https://arxiv.org/pdf/2508.06433) | [GitHub](https://github.com/zjunlp/MemP) |
+| MemOCR | Layout-aware visual memory for long-horizon reasoning. | [PDF](https://arxiv.org/pdf/2601.21468) | [GitHub](https://github.com/meituan/MemOCR) |
+| E-mem | Multi-agent episodic context reconstruction. | [PDF](https://arxiv.org/pdf/2601.21714) | [GitHub](https://github.com/dog-last/E-mem) |
+| JitRL | Test-time continual learning from retrieved experience. | [PDF](https://arxiv.org/pdf/2601.18510) | [GitHub](https://github.com/liushiliushi/JitRL) |
+| BudgetMem | Query-aware routing across memory budget tiers. | [PDF](https://arxiv.org/pdf/2602.06025) | [GitHub](https://github.com/ViktorAxelsen/BudgetMem) |
+| RF-Mem | Adaptive retrieval using familiarity and recollection paths. | [PDF](https://arxiv.org/pdf/2603.09250) | [GitHub](https://github.com/Zhang-Yingyi/ICLR2026_RF-Mem) |
+| MAD-M² | Memory masking for multi-agent debate. | [PDF](https://arxiv.org/pdf/2603.20215) | [GitHub](https://github.com/HongduanTian/MAD-MM) |
+| Distributed graph memory study | Cost and accuracy comparison of vector and graph memory. | [PDF](https://arxiv.org/pdf/2601.07978) | [GitHub](https://github.com/wolffbe/dmas-long-context-memory) |
+
+See [references/README.md](references/README.md) for the research index,
+detailed reading notes, and scope limitations.
+
+## Requirements
+
+- Python 3.10 or newer
+- An OpenAI-compatible chat completion API
+- Internet access on the first run to download the default embedding model
+
+Run all repository commands from the MiniMem root directory. Install MiniMem
+and its dependencies in editable mode:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Copy the environment template and add your API settings:
+
+```bash
+cp .env.example .env
+```
+
+Required variables:
+
+```text
+LLM_API_KEY
+LLM_MODEL_ID
+```
+
+`LLM_BASE_URL` is optional and can point to any compatible API endpoint.
+
+## Quick start
+
+The bundled example contains one synthetic conversation and one question:
+
+```bash
+python -m examples.quickstart
+```
+
+This normally performs one LLM call to construct memory and one LLM call to
+answer the question. Invalid model output or transient API failures may cause
+retries. The command prints the extracted memories, retrieved top-k facts,
+predicted answer, gold answer, and token-level F1. It also prints a message
+before each API stage so it is clear when the remote model is being called.
+
+The synthetic input is stored in
+[`examples/tiny_conversation.json`](examples/tiny_conversation.json).
+
+## Full LoCoMo evaluation
+
+MiniMem does not redistribute the LoCoMo dataset. Download `locomo10.json`
+from the [official LoCoMo repository](https://github.com/snap-research/locomo)
+and place it at:
+
+```text
+benchmarks/locomo/data/locomo10.json
+```
+
+The full evaluation has three explicit stages.
+
+> **API cost warning:** the current LoCoMo file contains 272 conversation
+> sessions and 1,540 non-adversarial questions. A full run therefore normally
+> makes 272 memory-construction calls and 1,540 answer calls. Retries may add
+> more calls. Check your model pricing and rate limits before starting.
+
+### Run all stages
+
+To run memory construction, question answering, and evaluation in sequence:
+
+```bash
+python -m benchmarks.locomo.run_all
+```
+
+The script stops immediately if any stage fails. The three stages can still be
+run separately as described below.
+
+### 1. Construct memory
+
+```bash
+python -m benchmarks.locomo.construct_memory
+```
+
+This builds memory for every session in all ten conversations and writes:
+
+```text
+benchmarks/locomo/memories/
+├── conv_0.json
+├── conv_1.json
+├── ...
+└── conv_9.json
+```
+
+Sessions are processed concurrently with `MAX_WORKERS = 8`.
+
+### 2. Answer questions
+
+```bash
+python -m benchmarks.locomo.answer_question
+```
+
+This loads the saved memories, answers every non-adversarial question, and
+writes:
+
+```text
+benchmarks/locomo/predictions/
+├── conv_0.json
+├── conv_1.json
+├── ...
+└── conv_9.json
+```
+
+Questions are processed concurrently with `MAX_WORKERS = 8`. Each prediction
+contains the question index, category, gold answer, predicted answer, and
+retrieved top-k memories.
+
+### 3. Evaluate answers
+
+```bash
+python -m benchmarks.locomo.evaluate_answer
+```
+
+This loads all prediction files, computes overall and category-level
+token F1, prints a summary table, and saves:
+
+```text
+benchmarks/locomo/results/summary.json
+```
+
+Reported F1 values use a `0–100` scale. The summary also includes the total
+question count and the number of `No information available.` answers.
+
+If your API has a lower rate limit, change `MAX_WORKERS` near the top of
+`construct_memory.py` and `answer_question.py` before running.
+
+## Project structure
+
+```text
+minimem/
+  llm.py          OpenAI-compatible chat client
+  base.py         Memory item structure
+  construct.py    LLM fact extraction
+  retrieve.py     Direct embedding top-k retrieval and question answering
+benchmarks/locomo/
+  run_all.py           Run all three stages in sequence
+  construct_memory.py  Build all conversation memories
+  answer_question.py  Answer all non-adversarial questions
+  evaluate_answer.py  Report overall and category-level F1
+examples/
+  quickstart.py   Two-call synthetic example
+pyproject.toml    Package metadata and dependency constraints
+```
+
+## License
+
+MiniMem source code and synthetic example data are released under the
+[MIT License](LICENSE).
