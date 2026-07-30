@@ -101,13 +101,17 @@ The synthetic input is stored in
 
 ## Full LoCoMo evaluation
 
-MiniMem does not redistribute the LoCoMo dataset. Download `locomo10.json`
-from the [official LoCoMo repository](https://github.com/snap-research/locomo)
-and place it at:
+MiniMem includes `locomo10.json` from the
+[official LoCoMo repository](https://github.com/snap-research/locomo) at:
 
 ```text
 benchmarks/locomo/data/locomo10.json
 ```
+
+The bundled dataset is distributed under
+[CC BY-NC 4.0](https://github.com/snap-research/locomo/blob/main/LICENSE.txt).
+See [`benchmarks/locomo/data/README.md`](benchmarks/locomo/data/README.md)
+for attribution and license details.
 
 The full evaluation has three explicit stages.
 
@@ -206,4 +210,5 @@ pyproject.toml    Package metadata and dependency constraints
 ## License
 
 MiniMem source code and synthetic example data are released under the
-[MIT License](LICENSE).
+[MIT License](LICENSE). The bundled LoCoMo dataset is released separately
+under [CC BY-NC 4.0](benchmarks/locomo/data/README.md).
