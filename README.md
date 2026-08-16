@@ -81,6 +81,8 @@ LLM_MODEL_ID
 ```
 
 `LLM_BASE_URL` is optional and can point to any compatible API endpoint.
+`LLM_THINKING_TYPE` is optional; set it to `disabled` to turn off the thinking
+mode of reasoning models such as DeepSeek before a large run.
 
 ## Quick start
 
@@ -189,6 +191,25 @@ question count and the number of `No information available.` answers.
 If your API has a lower rate limit, change `MAX_WORKERS` near the top of
 `construct_memory.py` and `answer_question.py` before running.
 
+## LoCoMo-Refined evaluation
+
+MiniMem also bundles the
+[LoCoMo-Refined](https://github.com/mem-eval-suite/LoCoMo_refined) dataset
+(the same ten conversations with 1,382 recalibrated questions) at
+`benchmarks/locomo_refined/data/`, distributed under CC BY-NC 4.0. The
+pipeline mirrors the three LoCoMo stages:
+
+```bash
+python -m benchmarks.locomo_refined.run_all
+```
+
+A full run normally makes 272 memory-construction calls and 1,382 answer
+calls. Each prediction additionally records a per-question `token_cost`
+(tiktoken counts of the retrieved memories, prompt, and answer). Evaluation
+reports local lexical F1 and BLEU-1 as a sanity check and writes
+`benchmarks/locomo_refined/results/predictions.jsonl`, the submission file
+for the official LLM-judge harness.
+
 ## Project structure
 
 ```text
@@ -202,6 +223,8 @@ benchmarks/locomo/
   construct_memory.py  Build all conversation memories
   answer_question.py  Answer all non-adversarial questions
   evaluate_answer.py  Report overall and category-level F1
+benchmarks/locomo_refined/
+  Same three-stage pipeline for LoCoMo-Refined, plus official submission export
 examples/
   quickstart.py   Two-call synthetic example
 pyproject.toml    Package metadata and dependency constraints
@@ -210,5 +233,7 @@ pyproject.toml    Package metadata and dependency constraints
 ## License
 
 MiniMem source code and synthetic example data are released under the
-[MIT License](LICENSE). The bundled LoCoMo dataset is released separately
-under [CC BY-NC 4.0](benchmarks/locomo/data/README.md).
+[MIT License](LICENSE). The bundled LoCoMo and LoCoMo-Refined datasets are
+released separately under CC BY-NC 4.0; see
+[benchmarks/locomo/data/README.md](benchmarks/locomo/data/README.md) and
+[benchmarks/locomo_refined/data/README.md](benchmarks/locomo_refined/data/README.md).
