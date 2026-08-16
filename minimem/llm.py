@@ -22,6 +22,8 @@ class LLMClient:
             raise ValueError("Set LLM_API_KEY or pass an API key.")
 
         self.temperature = float(os.getenv("LLM_TEMPERATURE", "0"))
+        # DeepSeek thinking switch: "disabled" / "enabled" (unset = provider default)
+        self.thinking_type = os.getenv("LLM_THINKING_TYPE") or None
         timeout = (
             timeout
             if timeout is not None
@@ -38,10 +40,14 @@ class LLMClient:
         )
 
     def invoke(self, messages: list[dict[str, str]]) -> str:
+        extra_body = (
+            {"thinking": {"type": self.thinking_type}} if self.thinking_type else None
+        )
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             temperature=self.temperature,
+            extra_body=extra_body,
         )
         content = response.choices[0].message.content
         if not content:
