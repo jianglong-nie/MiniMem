@@ -16,3 +16,8 @@ outputs/
 predictions/
 memories/
 results/
+
+benchmarks/beam/data/
+benchmarks/longmemeval/data/
+benchmarks/personamem/data/
+benchmarks/*/.cache/

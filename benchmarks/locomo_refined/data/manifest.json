@@ -1,0 +1,20 @@
+{
+  "dataset_file_name": "locomo_refined.json",
+  "conversation_count": 10,
+  "question_count": 1382,
+  "category_counts": {
+    "1": 213,
+    "2": 299,
+    "3": 68,
+    "4": 802
+  },
+  "is_multi_modality_counts": {
+    "false": 861,
+    "true": 521
+  },
+  "files": {
+    "conversations": "conversations.jsonl",
+    "questions": "questions.jsonl",
+    "submission_template": "submission_template.jsonl"
+  }
+}
