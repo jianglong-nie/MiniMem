@@ -23,6 +23,7 @@ dependencies = [
   "openai>=1.30,<3",
   "python-dotenv>=1.0,<2",
   "sentence-transformers>=2.7,<6",
+  "tiktoken>=0.7,<1",
   "tqdm>=4.66,<5",
 ]
 

@@ -1,4 +1,5 @@
 import numpy as np
+import tiktoken
 from sentence_transformers import SentenceTransformer
 
 from .llm import LLMClient
@@ -43,14 +44,16 @@ class RetrieveMemAgent:
         self.max_retries = max_retries
         self.memories = []
         self.memory_vectors = None
+        self._encoder = tiktoken.get_encoding("cl100k_base")
 
     def run(self, query: str, top_k=5):
         retrieved_memories = self.retrieve(query, top_k)
-        answer = self.answer(query, retrieved_memories)
+        answer, token_cost = self.answer(query, retrieved_memories)
         return {
             "question": query,
             "retrieved_memories": retrieved_memories,
             "answer": answer,
+            "token_cost": token_cost,
         }
 
     def load_memory(self, memories: list[dict]):
@@ -110,7 +113,22 @@ class RetrieveMemAgent:
             {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
-        return self._get_llm_response(messages)
+        answer = self._get_llm_response(messages)
+
+        # tiktoken 口径统计:只数 content 文本,数不到 role 等消息结构开销,
+        # 会略小于 API 返回的 prompt_tokens,但离线可复算、跨模型可比
+        token_cost = {
+            "retrieve_text_token": self.count_tokens(memory_text),
+            "input_text_token": self.count_tokens(ANSWER_SYSTEM_PROMPT + prompt),
+            "output_text_token": self.count_tokens(answer),
+        }
+        token_cost["total_text_token"] = (
+            token_cost["input_text_token"] + token_cost["output_text_token"]
+        )
+        return answer, token_cost
+
+    def count_tokens(self, text: str) -> int:
+        return len(self._encoder.encode(text))
 
     def _format_memory(self, memory: dict) -> str:
         fact = memory["fact"]
