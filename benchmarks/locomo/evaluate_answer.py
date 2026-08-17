@@ -1,8 +1,14 @@
-"""Evaluate all saved LoCoMo predictions with token-level F1."""
+"""Evaluate all saved LoCoMo predictions with token-level F1 and BLEU-1.
+
+Tokenisation and metrics mirror the LoCoMo-Refined scorer
+(benchmarks/locomo_refined/evaluate_answer.py) so scores are comparable
+across the bundled benchmarks. Note this differs from the original LoCoMo
+paper's SQuAD-style normalisation (which strips punctuation and articles).
+"""
 
 import json
+import math
 import re
-import string
 from collections import Counter
 from pathlib import Path
 
@@ -19,34 +25,55 @@ CATEGORY_LABELS = {
 CATEGORY_ORDER = [4, 1, 3, 2]
 
 
-def normalize_answer(value) -> str:
-    """Lowercase text and remove punctuation, articles, and whitespace."""
-
-    text = str(value).lower()
-    text = text.translate(str.maketrans("", "", string.punctuation))
-    text = re.sub(r"\b(a|an|the)\b", " ", text)
-    return " ".join(text.split())
+TOKEN_PATTERN = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
-def token_f1(prediction, gold_answer) -> float:
+def tokenize(text: str) -> list[str]:
+    return [token.lower() for token in TOKEN_PATTERN.findall(str(text))]
+
+
+def token_f1(prediction, reference) -> float:
     """Return token overlap F1 in the range [0, 1]."""
 
-    prediction_tokens = normalize_answer(prediction).split()
-    gold_tokens = normalize_answer(gold_answer).split()
-
-    if not prediction_tokens and not gold_tokens:
-        return 1.0
-    if not prediction_tokens or not gold_tokens:
+    prediction_tokens = tokenize(prediction)
+    reference_tokens = tokenize(reference)
+    if not prediction_tokens or not reference_tokens:
         return 0.0
 
-    overlap = Counter(prediction_tokens) & Counter(gold_tokens)
-    common = sum(overlap.values())
-    if common == 0:
+    reference_counts = Counter(reference_tokens)
+    overlap = sum(
+        min(count, reference_counts[token])
+        for token, count in Counter(prediction_tokens).items()
+    )
+    if overlap <= 0:
         return 0.0
 
-    precision = common / len(prediction_tokens)
-    recall = common / len(gold_tokens)
+    precision = overlap / len(prediction_tokens)
+    recall = overlap / len(reference_tokens)
     return 2 * precision * recall / (precision + recall)
+
+
+def bleu1(prediction, reference) -> float:
+    """Return unigram BLEU with a brevity penalty."""
+
+    prediction_tokens = tokenize(prediction)
+    reference_tokens = tokenize(reference)
+    if not prediction_tokens or not reference_tokens:
+        return 0.0
+
+    reference_counts = Counter(reference_tokens)
+    overlap = sum(
+        min(count, reference_counts[token])
+        for token, count in Counter(prediction_tokens).items()
+    )
+    precision = overlap / len(prediction_tokens)
+    if precision <= 0:
+        return 0.0
+
+    penalty = 1.0
+    if len(prediction_tokens) < len(reference_tokens):
+        penalty = math.exp(1.0 - len(reference_tokens) / len(prediction_tokens))
+    return penalty * precision
 
 
 def load_predictions() -> list[dict]:
@@ -77,18 +104,19 @@ def load_predictions() -> list[dict]:
 
 
 def summarize(predictions: list[dict]) -> dict:
-    """Calculate overall and category-level F1."""
+    """Calculate overall and category-level F1 and BLEU-1."""
 
     scores_by_category = {}
     no_information_count = 0
 
     for item in predictions:
         category = item["category"]
-        score = token_f1(
-            item["predicted_answer"],
-            item["gold_answer"],
+        scores_by_category.setdefault(category, []).append(
+            (
+                token_f1(item["predicted_answer"], item["gold_answer"]),
+                bleu1(item["predicted_answer"], item["gold_answer"]),
+            )
         )
-        scores_by_category.setdefault(category, []).append(score)
 
         if item["predicted_answer"].strip().lower().startswith(
             "no information"
@@ -107,7 +135,12 @@ def summarize(predictions: list[dict]) -> dict:
         category_results[CATEGORY_LABELS[category]] = {
             "count": len(scores),
             "f1": (
-                sum(scores) / len(scores) * 100
+                sum(f1 for f1, _ in scores) / len(scores) * 100
+                if scores
+                else 0.0
+            ),
+            "bleu1": (
+                sum(b for _, b in scores) / len(scores) * 100
                 if scores
                 else 0.0
             ),
@@ -115,28 +148,31 @@ def summarize(predictions: list[dict]) -> dict:
 
     return {
         "question_count": len(predictions),
-        "overall_f1": sum(all_scores) / len(all_scores) * 100,
+        "overall_f1": sum(f1 for f1, _ in all_scores) / len(all_scores) * 100,
+        "overall_bleu1": sum(b for _, b in all_scores) / len(all_scores) * 100,
         "no_information_count": no_information_count,
         "categories": category_results,
     }
 
 
 def print_summary(summary: dict):
-    print(f"{'Category':<15}{'Questions':>12}{'F1':>10}")
-    print("-" * 37)
+    print(f"{'Category':<15}{'Questions':>12}{'F1':>10}{'BLEU-1':>10}")
+    print("-" * 47)
 
     for category, result in summary["categories"].items():
         print(
             f"{category:<15}"
             f"{result['count']:>12}"
             f"{result['f1']:>10.2f}"
+            f"{result['bleu1']:>10.2f}"
         )
 
-    print("-" * 37)
+    print("-" * 47)
     print(
         f"{'Overall':<15}"
         f"{summary['question_count']:>12}"
         f"{summary['overall_f1']:>10.2f}"
+        f"{summary['overall_bleu1']:>10.2f}"
     )
     print(
         f"\nNo-information answers: "
