@@ -210,6 +210,37 @@ reports local lexical F1 and BLEU-1 as a sanity check and writes
 `benchmarks/locomo_refined/results/predictions.jsonl`, the submission file
 for the official LLM-judge harness.
 
+## LongMemEval-Oracle evaluation
+
+MiniMem also supports the oracle split of
+[LongMemEval](https://github.com/xiaowu0162/LongMemEval) (500 questions over
+user–assistant chat histories; the oracle split keeps only the evidence
+sessions). The dataset is not bundled: download `longmemeval_oracle` from the
+official release and place it at:
+
+```text
+benchmarks/longmemeval/data/longmemeval_oracle
+```
+
+Unlike LoCoMo, every LongMemEval question ships its own haystack, so the
+pipeline builds one memory store per question:
+
+```bash
+python -m benchmarks.longmemeval.run_all
+```
+
+A full run makes 948 memory-construction calls (one per haystack session) and
+500 answer calls. Each stage appends one JSONL line per question as it
+finishes and skips already-completed questions on restart, so an interrupted
+run can simply be re-run. Predictions record the same per-question
+`token_cost` as LoCoMo-Refined.
+
+Evaluation is free by default: it reports lexical F1 and BLEU-1 as a local
+sanity check. The official LongMemEval metric is an LLM judge with one prompt
+per question type (ported verbatim from the official repository, including
+the dedicated abstention prompt); set `RUN_OFFICIAL_JUDGE = True` near the
+top of `evaluate_answer.py` to run it (one call per question).
+
 ## Project structure
 
 ```text
@@ -225,6 +256,8 @@ benchmarks/locomo/
   evaluate_answer.py  Report overall and category-level F1
 benchmarks/locomo_refined/
   Same three-stage pipeline for LoCoMo-Refined, plus official submission export
+benchmarks/longmemeval/
+  Same three-stage pipeline for LongMemEval-Oracle, one memory store per question
 examples/
   quickstart.py   Two-call synthetic example
 pyproject.toml    Package metadata and dependency constraints
@@ -237,3 +270,6 @@ MiniMem source code and synthetic example data are released under the
 released separately under CC BY-NC 4.0; see
 [benchmarks/locomo/data/README.md](benchmarks/locomo/data/README.md) and
 [benchmarks/locomo_refined/data/README.md](benchmarks/locomo_refined/data/README.md).
+The LongMemEval dataset is not redistributed here; obtain it from the
+[official repository](https://github.com/xiaowu0162/LongMemEval) under its own
+license terms.
