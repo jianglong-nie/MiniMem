@@ -11,7 +11,7 @@ conversation
     -> embedding cosine similarity
     -> direct top-k retrieval
     -> LLM answer
-    -> token-level F1
+    -> token F1 and BLEU-1
 ```
 
 MiniMem is intended for education, debugging, and lightweight evaluation. It
@@ -240,6 +240,55 @@ sanity check. The official LongMemEval metric is an LLM judge with one prompt
 per question type (ported verbatim from the official repository, including
 the dedicated abstention prompt); set `RUN_OFFICIAL_JUDGE = True` near the
 top of `evaluate_answer.py` to run it (one call per question).
+
+## Results
+
+Reference numbers from one full run of each benchmark with
+`deepseek-v4-flash` (thinking disabled), `all-MiniLM-L6-v2` embeddings, and
+`TOP_K = 15`. All three benchmarks share the same tokenizer (the
+LoCoMo-Refined scorer), so lexical scores are computed identically; absolute
+numbers are still not comparable across datasets because question styles and
+gold-answer formats differ. Lexical F1 and BLEU-1 are sanity-check metrics
+only. For LongMemEval the official metric is the LLM judge, run here with the
+same DeepSeek model rather than the GPT-4o judge used in the paper, so the
+numbers are not directly comparable with published results.
+
+**LoCoMo** (1,540 non-adversarial questions):
+
+| Category | Questions | F1 | BLEU-1 |
+| --- | ---: | ---: | ---: |
+| Single-hop | 841 | 37.22 | 31.30 |
+| Multi-hop | 282 | 26.66 | 20.07 |
+| Open-domain | 96 | 22.77 | 16.55 |
+| Temporal | 321 | 35.30 | 30.32 |
+| **Overall** | **1,540** | **33.98** | **28.12** |
+
+**LoCoMo-Refined** (1,382 questions):
+
+| Category | Questions | F1 | BLEU-1 |
+| --- | ---: | ---: | ---: |
+| Single-hop | 802 | 41.15 | 34.28 |
+| Multi-hop | 213 | 33.43 | 26.07 |
+| Open-domain | 68 | 35.58 | 27.35 |
+| Temporal | 299 | 38.33 | 33.46 |
+| **Overall** | **1,382** | **39.07** | **32.50** |
+
+**LongMemEval-Oracle** (500 questions; Judge is the official metric — the
+lexical columns are meaningless for preference questions, whose gold answer
+is a rubric, and for the 30 abstention questions):
+
+| Question type | Questions | F1 | BLEU-1 | Judge |
+| --- | ---: | ---: | ---: | ---: |
+| single-session-user | 70 | 65.14 | 54.44 | 94.29% |
+| single-session-assistant | 56 | 59.84 | 51.85 | 75.00% |
+| single-session-preference | 30 | 9.23 | 2.46 | 36.67% |
+| multi-session | 133 | 53.21 | 47.25 | 73.68% |
+| knowledge-update | 78 | 51.29 | 41.56 | 79.49% |
+| temporal-reasoning | 133 | 42.33 | 28.03 | 68.42% |
+| **Overall** | **500** | **49.79** | **40.08** | **74.00%** |
+
+The abstention subset (30 questions, included in the rows above) scores
+96.67% under the dedicated abstention judge prompt.
 
 ## Project structure
 
