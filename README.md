@@ -169,8 +169,9 @@ benchmarks/locomo/predictions/
 ```
 
 Questions are processed concurrently with `MAX_WORKERS = 8`. Each prediction
-contains the question index, category, gold answer, predicted answer, and
-retrieved top-k memories.
+contains the question index, category, gold answer, predicted answer,
+retrieved top-k memories, and a per-question `token_cost` (tiktoken counts of
+the retrieved memories, prompt, and answer).
 
 ### 3. Evaluate answers
 
@@ -204,9 +205,8 @@ python -m benchmarks.locomo_refined.run_all
 ```
 
 A full run normally makes 272 memory-construction calls and 1,382 answer
-calls. Each prediction additionally records a per-question `token_cost`
-(tiktoken counts of the retrieved memories, prompt, and answer). Evaluation
-reports local lexical F1 and BLEU-1 as a sanity check and writes
+calls. Predictions record the same fields as LoCoMo, keyed by `qa_id`.
+Evaluation reports local lexical F1 and BLEU-1 as a sanity check and writes
 `benchmarks/locomo_refined/results/predictions.jsonl`, the submission file
 for the official LLM-judge harness.
 
@@ -230,10 +230,9 @@ python -m benchmarks.longmemeval.run_all
 ```
 
 A full run makes 948 memory-construction calls (one per haystack session) and
-500 answer calls. Each stage appends one JSONL line per question as it
-finishes and skips already-completed questions on restart, so an interrupted
-run can simply be re-run. Predictions record the same per-question
-`token_cost` as LoCoMo-Refined.
+500 answer calls. Each stage runs its questions concurrently and writes one
+JSONL file, ordered by question index, once all questions finish. Predictions
+record the same per-question `token_cost` as the other benchmarks.
 
 Evaluation is free by default: it reports lexical F1 and BLEU-1 as a local
 sanity check. The official LongMemEval metric is an LLM judge with one prompt
@@ -244,8 +243,11 @@ top of `evaluate_answer.py` to run it (one call per question).
 ## Results
 
 Reference numbers from one full run of each benchmark with
-`deepseek-v4-flash` (thinking disabled), `all-MiniLM-L6-v2` embeddings, and
-`TOP_K = 15`. All three benchmarks share the same tokenizer (the
+`deepseek-v4-flash` (thinking disabled) and `all-MiniLM-L6-v2` embeddings.
+The LoCoMo table below was produced with `TOP_K = 5`; LoCoMo-Refined and
+LongMemEval-Oracle used `TOP_K = 15`. The code now sets `TOP_K = 15` for all
+three benchmarks, so the LoCoMo numbers will change on the next run.
+All three benchmarks share the same tokenizer (the
 LoCoMo-Refined scorer), so lexical scores are computed identically; absolute
 numbers are still not comparable across datasets because question styles and
 gold-answer formats differ. Lexical F1 and BLEU-1 are sanity-check metrics
