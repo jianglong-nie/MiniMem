@@ -32,6 +32,7 @@ def process_question(
         "category": qa["category"],
         "gold_answer": qa["answer"],
         "predicted_answer": result["answer"],
+        "token_cost": result["token_cost"],
         "retrieved_memories": result["retrieved_memories"],
     }
 
