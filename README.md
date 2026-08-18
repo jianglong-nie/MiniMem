@@ -1,5 +1,7 @@
 # MiniMem
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 MiniMem is a deliberately small baseline for evaluating conversational memory
 on LoCoMo-style question answering.
 
@@ -11,12 +13,59 @@ conversation
     -> embedding cosine similarity
     -> direct top-k retrieval
     -> LLM answer
-    -> token F1 and BLEU-1
+    -> token F1 and BLEU-1 and LLM Judge
 ```
 
-MiniMem is intended for education, debugging, and lightweight evaluation. It
-does not include memory updating, clustering, keyword search, reranking,
-graph retrieval, or token-budget optimization.
+## Results
+
+Reference numbers from one full run of each benchmark with
+`deepseek-v4-flash` (thinking disabled), `all-MiniLM-L6-v2` embeddings, and
+`TOP_K = 15`. All three benchmarks share the same tokenizer (the
+LoCoMo-Refined scorer), so lexical scores are computed identically; absolute
+numbers are still not comparable across datasets because question styles and
+gold-answer formats differ. Lexical F1 and BLEU-1 are sanity-check metrics
+only; the Judge column is LLM-judge accuracy, run with the same DeepSeek
+model. LongMemEval uses the paper's judge prompts verbatim, while the two
+LoCoMo variants use this repo's own CORRECT/WRONG prompt (see each
+`evaluate_answer.py`), so judge numbers are not directly comparable with
+published results.
+
+**LoCoMo** (1,540 non-adversarial questions):
+
+| Category | Questions | F1 | BLEU-1 | Judge |
+| --- | ---: | ---: | ---: | ---: |
+| Single-hop | 841 | 38.20 | 31.74 | 63.97% |
+| Multi-hop | 282 | 30.06 | 23.20 | 46.45% |
+| Open-domain | 96 | 18.74 | 12.49 | 31.25% |
+| Temporal | 321 | 32.62 | 27.69 | 60.12% |
+| **Overall** | **1,540** | **34.33** | **28.13** | **57.92%** |
+
+**LoCoMo-Refined** (1,382 questions):
+
+| Category | Questions | F1 | BLEU-1 | Judge |
+| --- | ---: | ---: | ---: | ---: |
+| Single-hop | 802 | 41.15 | 34.28 | 66.46% |
+| Multi-hop | 213 | 33.43 | 26.07 | 61.03% |
+| Open-domain | 68 | 35.58 | 27.35 | 57.35% |
+| Temporal | 299 | 38.33 | 33.46 | 57.86% |
+| **Overall** | **1,382** | **39.07** | **32.50** | **63.31%** |
+
+**LongMemEval-Oracle** (500 questions; Judge is the official metric — the
+lexical columns are meaningless for preference questions, whose gold answer
+is a rubric, and for the 30 abstention questions):
+
+| Question type | Questions | F1 | BLEU-1 | Judge |
+| --- | ---: | ---: | ---: | ---: |
+| single-session-user | 70 | 65.14 | 54.44 | 94.29% |
+| single-session-assistant | 56 | 59.84 | 51.85 | 75.00% |
+| single-session-preference | 30 | 9.23 | 2.46 | 36.67% |
+| multi-session | 133 | 53.21 | 47.25 | 73.68% |
+| knowledge-update | 78 | 51.29 | 41.56 | 79.49% |
+| temporal-reasoning | 133 | 42.33 | 28.03 | 68.42% |
+| **Overall** | **500** | **49.79** | **40.08** | **74.00%** |
+
+The abstention subset (30 questions, included in the rows above) scores
+96.67% under the dedicated abstention judge prompt.
 
 ## Open-source memory research
 
@@ -179,14 +228,17 @@ the retrieved memories, prompt, and answer).
 python -m benchmarks.locomo.evaluate_answer
 ```
 
-This loads all prediction files, computes overall and category-level
-token F1, prints a summary table, and saves:
+This loads all prediction files, computes overall and category-level token
+F1 and BLEU-1, runs the LLM judge (one call per prediction; set
+`RUN_LLM_JUDGE = False` near the top of `evaluate_answer.py` for a free
+lexical-only run), prints a summary table, and saves:
 
 ```text
 benchmarks/locomo/results/summary.json
+benchmarks/locomo/results/judgments.jsonl
 ```
 
-Reported F1 values use a `0–100` scale. The summary also includes the total
+Reported scores use a `0–100` scale. The summary also includes the total
 question count and the number of `No information available.` answers.
 
 If your API has a lower rate limit, change `MAX_WORKERS` near the top of
@@ -206,7 +258,8 @@ python -m benchmarks.locomo_refined.run_all
 
 A full run normally makes 272 memory-construction calls and 1,382 answer
 calls. Predictions record the same fields as LoCoMo, keyed by `qa_id`.
-Evaluation reports local lexical F1 and BLEU-1 as a sanity check and writes
+Evaluation reports local lexical F1 and BLEU-1 as a sanity check, runs the
+same LLM judge as LoCoMo (gated behind `RUN_LLM_JUDGE`), and writes
 `benchmarks/locomo_refined/results/predictions.jsonl`, the submission file
 for the official LLM-judge harness.
 
@@ -234,63 +287,12 @@ A full run makes 948 memory-construction calls (one per haystack session) and
 JSONL file, ordered by question index, once all questions finish. Predictions
 record the same per-question `token_cost` as the other benchmarks.
 
-Evaluation is free by default: it reports lexical F1 and BLEU-1 as a local
-sanity check. The official LongMemEval metric is an LLM judge with one prompt
-per question type (ported verbatim from the official repository, including
-the dedicated abstention prompt); set `RUN_OFFICIAL_JUDGE = True` near the
-top of `evaluate_answer.py` to run it (one call per question).
-
-## Results
-
-Reference numbers from one full run of each benchmark with
-`deepseek-v4-flash` (thinking disabled) and `all-MiniLM-L6-v2` embeddings.
-The LoCoMo table below was produced with `TOP_K = 5`; LoCoMo-Refined and
-LongMemEval-Oracle used `TOP_K = 15`. The code now sets `TOP_K = 15` for all
-three benchmarks, so the LoCoMo numbers will change on the next run.
-All three benchmarks share the same tokenizer (the
-LoCoMo-Refined scorer), so lexical scores are computed identically; absolute
-numbers are still not comparable across datasets because question styles and
-gold-answer formats differ. Lexical F1 and BLEU-1 are sanity-check metrics
-only. For LongMemEval the official metric is the LLM judge, run here with the
-same DeepSeek model rather than the GPT-4o judge used in the paper, so the
-numbers are not directly comparable with published results.
-
-**LoCoMo** (1,540 non-adversarial questions):
-
-| Category | Questions | F1 | BLEU-1 |
-| --- | ---: | ---: | ---: |
-| Single-hop | 841 | 37.22 | 31.30 |
-| Multi-hop | 282 | 26.66 | 20.07 |
-| Open-domain | 96 | 22.77 | 16.55 |
-| Temporal | 321 | 35.30 | 30.32 |
-| **Overall** | **1,540** | **33.98** | **28.12** |
-
-**LoCoMo-Refined** (1,382 questions):
-
-| Category | Questions | F1 | BLEU-1 |
-| --- | ---: | ---: | ---: |
-| Single-hop | 802 | 41.15 | 34.28 |
-| Multi-hop | 213 | 33.43 | 26.07 |
-| Open-domain | 68 | 35.58 | 27.35 |
-| Temporal | 299 | 38.33 | 33.46 |
-| **Overall** | **1,382** | **39.07** | **32.50** |
-
-**LongMemEval-Oracle** (500 questions; Judge is the official metric — the
-lexical columns are meaningless for preference questions, whose gold answer
-is a rubric, and for the 30 abstention questions):
-
-| Question type | Questions | F1 | BLEU-1 | Judge |
-| --- | ---: | ---: | ---: | ---: |
-| single-session-user | 70 | 65.14 | 54.44 | 94.29% |
-| single-session-assistant | 56 | 59.84 | 51.85 | 75.00% |
-| single-session-preference | 30 | 9.23 | 2.46 | 36.67% |
-| multi-session | 133 | 53.21 | 47.25 | 73.68% |
-| knowledge-update | 78 | 51.29 | 41.56 | 79.49% |
-| temporal-reasoning | 133 | 42.33 | 28.03 | 68.42% |
-| **Overall** | **500** | **49.79** | **40.08** | **74.00%** |
-
-The abstention subset (30 questions, included in the rows above) scores
-96.67% under the dedicated abstention judge prompt.
+Evaluation reports lexical F1 and BLEU-1 as a local sanity check and, by
+default, also runs the official LongMemEval metric: an LLM judge with one
+prompt per question type (ported verbatim from the official repository,
+including the dedicated abstention prompt), costing one call per question.
+Set `RUN_OFFICIAL_JUDGE = False` near the top of `evaluate_answer.py` for a
+free lexical-only run.
 
 ## Project structure
 
