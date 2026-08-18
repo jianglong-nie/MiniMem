@@ -1,7 +1,6 @@
 """Build memories for every question in LongMemEval-Oracle."""
 
 import json
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -31,16 +30,6 @@ def load_questions() -> list[dict]:
     return questions
 
 
-def load_completed_indices() -> set[int]:
-    """Return question indices already present in the memories file."""
-
-    if not MEMORIES_PATH.is_file():
-        return set()
-
-    with MEMORIES_PATH.open("r", encoding="utf-8") as file:
-        return {json.loads(line)["question_idx"] for line in file if line.strip()}
-
-
 def process_session(session: list[dict], date: str, llm: LLMClient):
     """Build memory for one haystack session."""
 
@@ -67,48 +56,33 @@ def process_question(question: dict, llm: LLMClient) -> list[dict]:
 
 def main():
     questions = load_questions()
-    completed = load_completed_indices()
-    pending = [
-        (idx, question)
-        for idx, question in enumerate(questions)
-        if idx not in completed
-    ]
-    if completed:
-        print(f"Resuming: {len(completed)} questions already built, {len(pending)} to go.")
-
     llm = LLMClient()
+
+    memories_by_question = {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_question = {
+            executor.submit(process_question, question, llm): question_idx
+            for question_idx, question in enumerate(questions)
+        }
+        for future in tqdm(
+            as_completed(future_to_question),
+            total=len(future_to_question),
+            desc="Building questions",
+        ):
+            question_idx = future_to_question[future]
+            memories_by_question[question_idx] = future.result()
+
     MEMORIES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_lock = threading.Lock()
-
-    with MEMORIES_PATH.open("a", encoding="utf-8") as file:
-
-        def build_and_save(question_idx: int, question: dict):
-            memories = process_question(question, llm)
+    with MEMORIES_PATH.open("w", encoding="utf-8") as file:
+        for question_idx, question in enumerate(questions):
             record = {
                 "question_idx": question_idx,
                 "question_id": question["question_id"],
-                "memories": memories,
+                "memories": memories_by_question[question_idx],
             }
-            with write_lock:
-                file.write(json.dumps(record, ensure_ascii=False) + "\n")
-                file.flush()
+            file.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = [
-                executor.submit(build_and_save, question_idx, question)
-                for question_idx, question in pending
-            ]
-            for future in tqdm(
-                as_completed(futures),
-                total=len(futures),
-                desc="Building questions",
-            ):
-                future.result()
-
-    print(
-        f"Saved memories for {len(completed) + len(pending)} questions to "
-        f"{MEMORIES_PATH}"
-    )
+    print(f"Saved memories for {len(questions)} questions to {MEMORIES_PATH}")
 
 
 if __name__ == "__main__":

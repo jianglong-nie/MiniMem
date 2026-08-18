@@ -40,16 +40,6 @@ def load_memories() -> dict[int, list[dict]]:
     return memories_by_question
 
 
-def load_completed_indices() -> set[int]:
-    """Return question indices already present in the predictions file."""
-
-    if not PREDICTIONS_PATH.is_file():
-        return set()
-
-    with PREDICTIONS_PATH.open("r", encoding="utf-8") as file:
-        return {json.loads(line)["question_idx"] for line in file if line.strip()}
-
-
 def process_question(
     question_idx: int,
     question: dict,
@@ -89,57 +79,42 @@ def process_question(
 def main():
     questions = load_questions()
     memories_by_question = load_memories()
-    completed = load_completed_indices()
-
-    pending = [
-        (idx, question)
-        for idx, question in enumerate(questions)
-        if idx in memories_by_question and idx not in completed
-    ]
-    missing = len(questions) - len(memories_by_question)
-    if missing:
-        print(f"Warning: {missing} questions have no memories yet and are skipped.")
-    if completed:
-        print(f"Resuming: {len(completed)} questions already answered, {len(pending)} to go.")
 
     model = SentenceTransformer(EMBEDDING_MODEL)
     model_lock = threading.Lock()
     llm = LLMClient()
 
-    PREDICTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_lock = threading.Lock()
-
-    with PREDICTIONS_PATH.open("a", encoding="utf-8") as file:
-
-        def answer_and_save(question_idx: int, question: dict):
-            prediction = process_question(
+    predictions_by_question = {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_question = {
+            executor.submit(
+                process_question,
                 question_idx,
                 question,
                 memories_by_question[question_idx],
                 model,
                 model_lock,
                 llm,
+            ): question_idx
+            for question_idx, question in enumerate(questions)
+        }
+        for future in tqdm(
+            as_completed(future_to_question),
+            total=len(future_to_question),
+            desc="Answering questions",
+        ):
+            question_idx = future_to_question[future]
+            predictions_by_question[question_idx] = future.result()
+
+    PREDICTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with PREDICTIONS_PATH.open("w", encoding="utf-8") as file:
+        for question_idx in range(len(questions)):
+            file.write(
+                json.dumps(predictions_by_question[question_idx], ensure_ascii=False)
+                + "\n"
             )
-            with write_lock:
-                file.write(json.dumps(prediction, ensure_ascii=False) + "\n")
-                file.flush()
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = [
-                executor.submit(answer_and_save, question_idx, question)
-                for question_idx, question in pending
-            ]
-            for future in tqdm(
-                as_completed(futures),
-                total=len(futures),
-                desc="Answering questions",
-            ):
-                future.result()
-
-    print(
-        f"Saved predictions for {len(completed) + len(pending)} questions to "
-        f"{PREDICTIONS_PATH}"
-    )
+    print(f"Saved predictions for {len(questions)} questions to {PREDICTIONS_PATH}")
 
 
 if __name__ == "__main__":

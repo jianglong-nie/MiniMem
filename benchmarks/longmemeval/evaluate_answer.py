@@ -17,7 +17,6 @@ preference questions (the gold answer is a rubric) and abstention questions
 import json
 import math
 import re
-import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -31,7 +30,6 @@ from .answer_question import PREDICTIONS_PATH
 RESULTS_PATH = Path("benchmarks/longmemeval/results/oracle.jsonl")
 SUMMARY_PATH = Path("benchmarks/longmemeval/results/summary.json")
 MAX_WORKERS = 8
-MAX_RETRIES = 3
 
 # The official metric costs one judge call per prediction. Keep False for free
 # lexical-only runs during development; set True to produce the real score.
@@ -168,18 +166,7 @@ def judge_prediction(prediction: dict, llm: LLMClient) -> dict:
     """Ask the judge model whether one prediction is correct."""
 
     messages = [{"role": "user", "content": judge_prompt(prediction)}]
-
-    last_error = None
-    for _ in range(MAX_RETRIES):
-        try:
-            response = llm.invoke(messages).strip()
-            break
-        except Exception as error:
-            last_error = error
-    else:
-        raise RuntimeError(
-            f"The judge did not respond after {MAX_RETRIES} attempts: {last_error}"
-        ) from last_error
+    response = llm.invoke(messages).strip()
 
     return {
         "question_idx": prediction["question_idx"],
@@ -192,42 +179,29 @@ def judge_prediction(prediction: dict, llm: LLMClient) -> dict:
 
 
 def run_official_judge(predictions: list[dict]) -> None:
-    """Judge every prediction that has no saved judgment yet."""
-
-    completed = {result["question_idx"] for result in load_results()}
-    pending = [
-        prediction
-        for prediction in predictions
-        if prediction["question_idx"] not in completed
-    ]
-    if completed:
-        print(f"Resuming: {len(completed)} predictions already judged, {len(pending)} to go.")
-    if not pending:
-        return
+    """Judge every prediction and save the judgments."""
 
     llm = LLMClient()
+
+    results_by_index = {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_index = {
+            executor.submit(judge_prediction, prediction, llm): index
+            for index, prediction in enumerate(predictions)
+        }
+        for future in tqdm(
+            as_completed(future_to_index),
+            total=len(future_to_index),
+            desc="Judging predictions",
+        ):
+            results_by_index[future_to_index[future]] = future.result()
+
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    write_lock = threading.Lock()
-
-    with RESULTS_PATH.open("a", encoding="utf-8") as file:
-
-        def judge_and_save(prediction: dict):
-            result = judge_prediction(prediction, llm)
-            with write_lock:
-                file.write(json.dumps(result, ensure_ascii=False) + "\n")
-                file.flush()
-
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = [
-                executor.submit(judge_and_save, prediction)
-                for prediction in pending
-            ]
-            for future in tqdm(
-                as_completed(futures),
-                total=len(futures),
-                desc="Judging predictions",
-            ):
-                future.result()
+    with RESULTS_PATH.open("w", encoding="utf-8") as file:
+        for index in range(len(predictions)):
+            file.write(
+                json.dumps(results_by_index[index], ensure_ascii=False) + "\n"
+            )
 
 
 def summarize_lexical(predictions: list[dict]) -> dict:
