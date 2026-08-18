@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import numpy as np
 import tiktoken
 from sentence_transformers import SentenceTransformer
@@ -29,11 +31,7 @@ class RetrieveMemAgent:
         model="all-MiniLM-L6-v2",
         llm=None,
         model_lock=None,
-        max_retries=3,
     ):
-        if max_retries <= 0:
-            raise ValueError("max_retries must be greater than zero.")
-
         self.llm = llm or LLMClient()
         self.model = (
             SentenceTransformer(model)
@@ -41,7 +39,6 @@ class RetrieveMemAgent:
             else model
         )
         self.model_lock = model_lock
-        self.max_retries = max_retries
         self.memories = []
         self.memory_vectors = None
         self._encoder = tiktoken.get_encoding("cl100k_base")
@@ -113,7 +110,7 @@ class RetrieveMemAgent:
             {"role": "system", "content": ANSWER_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ]
-        answer = self._get_llm_response(messages)
+        answer = self.llm.invoke(messages).strip()
 
         # tiktoken 口径统计:只数 content 文本,数不到 role 等消息结构开销,
         # 会略小于 API 返回的 prompt_tokens,但离线可复算、跨模型可比
@@ -138,32 +135,9 @@ class RetrieveMemAgent:
         return fact
 
     def _encode(self, text):
-        if self.model_lock is None:
+        with self.model_lock or nullcontext():
             vectors = self.model.encode(
                 text,
                 normalize_embeddings=True,
             )
-        else:
-            with self.model_lock:
-                vectors = self.model.encode(
-                    text,
-                    normalize_embeddings=True,
-                )
         return np.asarray(vectors, dtype=float)
-
-    def _get_llm_response(self, messages: list[dict]) -> str:
-        last_error = None
-
-        for _ in range(self.max_retries):
-            try:
-                response = self.llm.invoke(messages).strip()
-                if not response:
-                    raise ValueError("The model returned an empty answer.")
-                return response
-            except Exception as error:
-                last_error = error
-
-        raise RuntimeError(
-            "The model did not return an answer after "
-            f"{self.max_retries} attempts: {last_error}"
-        ) from last_error

@@ -28,7 +28,6 @@ class ConstructMemAgent:
             raise ValueError("max_retries must be greater than zero.")
         self.llm = llm or LLMClient()
         self.max_retries = max_retries
-        self.memories = []
 
     def run(
         self,
@@ -48,8 +47,8 @@ class ConstructMemAgent:
         ]
 
         response = self._get_llm_response(messages)
-        self.memories = self._parse_response(response, date_time)
-        return [memory.to_dict() for memory in self.memories]
+        memories = self._parse_response(response, date_time)
+        return [memory.to_dict() for memory in memories]
 
     def _parse_input(self, turns: list[dict[str, str]]) -> str:
         if not turns:
@@ -96,9 +95,6 @@ class ConstructMemAgent:
         ) from last_error
 
     def _strip_json_code_fence(self, response: str) -> str:
-        if not isinstance(response, str):
-            raise TypeError("The model response must be a string.")
-
         response = response.strip()
         if response.startswith("```") and response.endswith("```"):
             lines = response.splitlines()

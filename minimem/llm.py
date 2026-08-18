@@ -36,7 +36,9 @@ class LLMClient:
             api_key=api_key,
             base_url=base_url or os.getenv("LLM_BASE_URL") or None,
             timeout=timeout,
-            max_retries=0,
+            # 网络/限流等临时错误由 SDK 带退避地重试;
+            # JSON 格式错误的重试在 ConstructMemAgent 里单独处理。
+            max_retries=3,
         )
 
     def invoke(self, messages: list[dict[str, str]]) -> str:
