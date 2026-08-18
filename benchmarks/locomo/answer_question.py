@@ -14,7 +14,7 @@ DATA_PATH = Path("benchmarks/locomo/data/locomo10.json")
 MEMORIES_DIR = Path("benchmarks/locomo/memories")
 PREDICTIONS_DIR = Path("benchmarks/locomo/predictions")
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-TOP_K = 5
+TOP_K = 15
 MAX_WORKERS = 8
 
 
