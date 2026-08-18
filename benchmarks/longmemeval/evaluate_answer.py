@@ -33,7 +33,7 @@ MAX_WORKERS = 8
 
 # The official metric costs one judge call per prediction. Keep False for free
 # lexical-only runs during development; set True to produce the real score.
-RUN_OFFICIAL_JUDGE = False
+RUN_OFFICIAL_JUDGE = True
 
 QUESTION_TYPE_ORDER = [
     "single-session-user",

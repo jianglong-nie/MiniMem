@@ -10,12 +10,40 @@ import json
 import math
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+from tqdm import tqdm
+
+from minimem import LLMClient
 
 PREDICTIONS_DIR = Path("benchmarks/locomo_refined/predictions")
 RESULTS_DIR = Path("benchmarks/locomo_refined/results")
 SUBMISSION_PATH = RESULTS_DIR / "predictions.jsonl"
 SUMMARY_PATH = RESULTS_DIR / "summary.json"
+JUDGMENTS_PATH = RESULTS_DIR / "judgments.jsonl"
+MAX_WORKERS = 8
+
+# The LLM judge costs one call per prediction. Set False for free
+# lexical-only runs during development.
+RUN_LLM_JUDGE = True
+
+JUDGE_PROMPT = """Your task is to label a generated answer as CORRECT or WRONG, given a
+question about a past conversation and the gold answer.
+
+Grade generously: the generated answer may be longer or phrased differently,
+and it is CORRECT as long as it conveys the same information as the gold
+answer. The gold answer may list several acceptable variants separated by
+" OR "; matching any one of them counts as CORRECT. For time questions, treat
+different formats of the same date or time period as CORRECT ("May 7th" vs
+"7 May"). If the generated answer misses the asked information or states
+something different, it is WRONG.
+
+Question: {question}
+Gold answer: {gold_answer}
+Generated answer: {predicted_answer}
+
+Reply with exactly one word: CORRECT or WRONG."""
 
 CATEGORY_LABELS = {
     "1": "Multi-hop",
@@ -117,6 +145,82 @@ def load_predictions() -> list[dict]:
     return predictions
 
 
+def judge_prediction(prediction: dict, llm: LLMClient) -> dict:
+    """Ask the judge model whether one prediction is correct."""
+
+    prompt = JUDGE_PROMPT.format(
+        question=prediction["question"],
+        gold_answer=" OR ".join(answer_candidates(prediction["gold_answer"])),
+        predicted_answer=prediction["predicted_answer"],
+    )
+    response = llm.invoke([{"role": "user", "content": prompt}]).strip()
+
+    return {
+        "qa_id": prediction["qa_id"],
+        "category": prediction["category"],
+        "judge_response": response,
+        "correct": response.upper().startswith("CORRECT"),
+    }
+
+
+def run_llm_judge(predictions: list[dict]) -> None:
+    """Judge every prediction and save the judgments."""
+
+    llm = LLMClient()
+
+    judgments_by_index = {}
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_index = {
+            executor.submit(judge_prediction, prediction, llm): index
+            for index, prediction in enumerate(predictions)
+        }
+        for future in tqdm(
+            as_completed(future_to_index),
+            total=len(future_to_index),
+            desc="Judging predictions",
+        ):
+            judgments_by_index[future_to_index[future]] = future.result()
+
+    with JUDGMENTS_PATH.open("w", encoding="utf-8") as file:
+        for index in range(len(predictions)):
+            file.write(
+                json.dumps(judgments_by_index[index], ensure_ascii=False) + "\n"
+            )
+
+
+def load_judgments() -> list[dict]:
+    """Return the judgments saved so far."""
+
+    if not JUDGMENTS_PATH.is_file():
+        return []
+
+    with JUDGMENTS_PATH.open("r", encoding="utf-8") as file:
+        return [json.loads(line) for line in file if line.strip()]
+
+
+def summarize_judge(judgments: list[dict]) -> dict:
+    """Calculate overall and category-level judge accuracy."""
+
+    def accuracy(items: list[dict]) -> float:
+        return sum(item["correct"] for item in items) / len(items) * 100
+
+    by_category = {}
+    for judgment in judgments:
+        by_category.setdefault(judgment["category"], []).append(judgment)
+
+    return {
+        "overall": {"count": len(judgments), "accuracy": accuracy(judgments)},
+        "categories": {
+            CATEGORY_LABELS[category]: {
+                "count": len(by_category[category]),
+                "accuracy": accuracy(by_category[category]),
+            }
+            for category in CATEGORY_ORDER
+            if category in by_category
+        },
+    }
+
+
 def summarize(predictions: list[dict]) -> dict:
     """Calculate overall and category-level lexical metrics."""
 
@@ -190,6 +294,21 @@ def print_summary(summary: dict) -> None:
     print(f"\nNo-information answers: {summary['no_information_count']}")
 
 
+def print_judge_summary(summary: dict) -> None:
+    print("\nLLM-judge accuracy:")
+    print(f"{'Category':<15}{'Questions':>12}{'Accuracy':>12}")
+    print("-" * 39)
+    for category, result in summary["categories"].items():
+        print(
+            f"{category:<15}{result['count']:>12}{result['accuracy']:>11.2f}%"
+        )
+    print("-" * 39)
+    overall = summary["overall"]
+    print(
+        f"{'Overall':<15}{overall['count']:>12}{overall['accuracy']:>11.2f}%"
+    )
+
+
 def print_next_step() -> None:
     print(
         "\nLexical metrics above are a local sanity check only. For the official"
@@ -204,14 +323,23 @@ def print_next_step() -> None:
 
 def main():
     predictions = load_predictions()
-    summary = summarize(predictions)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    if RUN_LLM_JUDGE:
+        run_llm_judge(predictions)
+
+    summary = summarize(predictions)
+    judgments = load_judgments()
+    if judgments:
+        summary["llm_judge"] = summarize_judge(judgments)
+
     write_submission(predictions)
     with SUMMARY_PATH.open("w", encoding="utf-8") as file:
         json.dump(summary, file, ensure_ascii=False, indent=2)
 
     print_summary(summary)
+    if judgments:
+        print_judge_summary(summary["llm_judge"])
     print(f"\nSaved submission to {SUBMISSION_PATH}")
     print(f"Saved local summary to {SUMMARY_PATH}")
     print_next_step()
